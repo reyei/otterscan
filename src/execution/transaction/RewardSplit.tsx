@@ -20,13 +20,15 @@ const RewardSplit: React.FC<RewardSplitProps> = ({ txData }) => {
   const {
     nativeCurrency: { symbol },
   } = useChainInfo();
-  const paidFees = txData.gasPrice! * txData.confirmedData!.gasUsed;
+  const paidFees = (txData.gasPrice ?? 0n) * txData.confirmedData!.gasUsed;
   const burntFees = block
     ? block.baseFeePerGas! * txData.confirmedData!.gasUsed
     : 0n;
 
   const minerReward = paidFees - burntFees;
-  const burntPerc = Number((burntFees * 10000n) / paidFees) / 100;
+  // Optimism: paidFees === 0n for deposit transactions
+  const burntPerc =
+    paidFees === 0n ? 0 : Number((burntFees * 10000n) / paidFees) / 100;
   const minerPerc = Math.round((100 - burntPerc) * 100) / 100;
 
   return (
