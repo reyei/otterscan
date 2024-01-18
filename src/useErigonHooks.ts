@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import useSWR, { Fetcher } from "swr";
 import useSWRImmutable from "swr/immutable";
 import erc20 from "./abi/erc20.json";
+import { getOpFeeData, isOptimistic } from "./execution/op-tx-calculation";
 import {
   ChecksummedAddress,
   InternalOperation,
@@ -109,6 +110,7 @@ const blockTransactionsFetcher: Fetcher<
         throw new Error("blockTransactionsFetcher: unknown tx hash");
       }
 
+      let fee: bigint;
       let effectiveGasPrice: bigint;
       if (t.type === 2) {
         const tip =
@@ -118,6 +120,31 @@ const blockTransactionsFetcher: Fetcher<
         effectiveGasPrice = _block.baseFeePerGas! + tip;
       } else {
         effectiveGasPrice = t.gasPrice!;
+      }
+
+      // Handle Optimism-specific values
+      let l1GasUsed: bigint | undefined;
+      let l1GasPrice: bigint | undefined;
+      let l1FeeScalar: string | undefined;
+      if (isOptimistic(provider._network.chainId)) {
+        if (t.type === 0x7e) {
+          fee = 0n;
+          effectiveGasPrice = 0n;
+        } else {
+          l1GasUsed = formatter.bigInt(_rawReceipt.l1GasUsed);
+          l1GasPrice = formatter.bigInt(_rawReceipt.l1GasPrice);
+          l1FeeScalar = _rawReceipt.l1FeeScalar;
+          ({ fee, gasPrice: effectiveGasPrice } = getOpFeeData(
+            t.type,
+            effectiveGasPrice,
+            _receipt.gasUsed!,
+            l1GasUsed,
+            l1GasPrice,
+            l1FeeScalar ?? "0",
+          ));
+        }
+      } else {
+        fee = formatter.bigInt(_receipt.gasUsed) * effectiveGasPrice;
       }
 
       return {
@@ -130,10 +157,13 @@ const blockTransactionsFetcher: Fetcher<
         to: t.to ?? null,
         createdContractAddress: _receipt.contractAddress ?? undefined,
         value: t.value,
-        fee: formatter.bigInt(_receipt.gasUsed) * effectiveGasPrice,
+        fee,
         gasPrice: effectiveGasPrice,
         data: t.data,
         status: formatter.number(_receipt.status),
+        l1GasUsed,
+        l1GasPrice,
+        l1FeeScalar,
       };
     })
     .reverse();
@@ -198,17 +228,6 @@ export const useBlockDataFromTransaction = (
   return block;
 };
 
-function multiplyByScalar(num: bigint, decimalStr: string): bigint {
-  const [integerPart, fractionalPart] = decimalStr.split(".");
-  const numInteger = BigInt(integerPart);
-  if (fractionalPart) {
-    const numFraction = BigInt(fractionalPart);
-    const divisor = 10n ** BigInt(fractionalPart.length);
-    return (num * numInteger * divisor + num * numFraction) / divisor;
-  }
-  return num * numInteger;
-}
-
 export const useTxData = (
   provider: JsonRpcApiProvider | undefined,
   txhash: string,
@@ -233,10 +252,12 @@ export const useTxData = (
 
         let fee: bigint;
         let gasPrice: bigint;
-        const isOptimistic =
-          provider._network.chainId === 10n ||
-          provider._network.chainId === 11155420n;
-        if (isOptimistic) {
+
+        // Handle Optimism-specific values
+        let l1GasUsed: bigint | undefined;
+        let l1GasPrice: bigint | undefined;
+        let l1FeeScalar: string | undefined;
+        if (isOptimistic(provider._network.chainId)) {
           if (_response.type === 0x7e) {
             fee = 0n;
             gasPrice = 0n;
@@ -245,15 +266,17 @@ export const useTxData = (
               "eth_getTransactionReceipt",
               [txhash],
             );
-            console.log(_receipt);
-            console.log(_rawReceipt);
-            const l1GasUsed: bigint = formatter.bigInt(_rawReceipt.l1GasUsed);
-            const l1GasPrice: bigint = formatter.bigInt(_rawReceipt.l1GasPrice);
-            const l1FeeScalar: string = _rawReceipt.l1FeeScalar;
-            gasPrice = _response.gasPrice!;
-            fee =
-              _receipt!.gasUsed! * gasPrice +
-              multiplyByScalar(l1GasUsed * l1GasPrice, l1FeeScalar);
+            l1GasUsed = formatter.bigInt(_rawReceipt.l1GasUsed);
+            l1GasPrice = formatter.bigInt(_rawReceipt.l1GasPrice);
+            l1FeeScalar = _rawReceipt.l1FeeScalar;
+            ({ fee, gasPrice } = getOpFeeData(
+              _response.type,
+              _response.gasPrice!,
+              _receipt ? _receipt.gasUsed! : 0n,
+              l1GasUsed,
+              l1GasPrice,
+              l1FeeScalar ?? "0",
+            ));
           }
         } else {
           fee = _response.gasPrice! * _receipt!.gasUsed!;
@@ -285,6 +308,9 @@ export const useTxData = (
                   fee,
                   gasUsed: _receipt.gasUsed,
                   logs: Array.from(_receipt.logs),
+                  l1GasUsed,
+                  l1GasPrice,
+                  l1FeeScalar,
                 },
         });
       } catch (err) {
