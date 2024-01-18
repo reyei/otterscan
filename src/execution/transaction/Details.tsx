@@ -51,7 +51,7 @@ import {
 import { RuntimeContext } from "../../useRuntime";
 import { commify } from "../../utils/utils";
 import TransactionAddressWithCopy from "../components/TransactionAddressWithCopy";
-import { multiplyByScalar } from "../op-tx-calculation";
+import { isOptimisticChain } from "../op-tx-calculation";
 import NavNonce from "./NavNonce";
 import RewardSplit from "./RewardSplit";
 import TokenTransferItem from "./TokenTransferItem";
@@ -116,6 +116,7 @@ const Details: FC<DetailsProps> = ({ txData }) => {
     : undefined;
   const [expanded, setExpanded] = useState<boolean>(false);
   const [showFunctionHelp, setShowFunctionHelp] = useState<boolean>(false);
+  const isOptimistic = isOptimisticChain(provider?._network.chainId);
 
   return (
     <ContentFrame tabs>
@@ -433,24 +434,6 @@ const Details: FC<DetailsProps> = ({ txData }) => {
               </div>
             </InfoRow>
           )}
-          {txData.confirmedData &&
-            txData.confirmedData.l1GasUsed &&
-            txData.confirmedData.l1GasPrice &&
-            txData.confirmedData.l1FeeScalar !== undefined && (
-              <InfoRow title="L1 Fees Paid">
-                <span>
-                  <NativeTokenAmountAndFiat
-                    value={multiplyByScalar(
-                      txData.confirmedData.l1GasUsed *
-                        txData.confirmedData.l1GasPrice,
-                      txData.confirmedData.l1FeeScalar,
-                    )}
-                    blockTag={txData.confirmedData?.blockNumber}
-                    {...feePreset}
-                  />
-                </span>
-              </InfoRow>
-            )}
         </>
       )}
       {block && hasEIP1559 && (
@@ -480,7 +463,9 @@ const Details: FC<DetailsProps> = ({ txData }) => {
                   {...feePreset}
                 />
               </div>
-              {hasEIP1559 && <RewardSplit txData={txData} />}
+              {hasEIP1559 && (!isOptimistic || txData.type !== 126) && (
+                <RewardSplit txData={txData} />
+              )}
             </div>
           </InfoRow>
           <InfoRow title={`${name} Price`}>
