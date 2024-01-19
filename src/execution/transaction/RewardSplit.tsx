@@ -85,22 +85,28 @@ const RewardSplit: React.FC<RewardSplitProps> = ({ txData }) => {
             </span>
           </span>
         </div>
-        <PercentageGauge
-          perc={l1Perc}
-          bgColor="bg-blue-100"
-          bgColorPerc="bg-blue-300"
-          textColor="text-blue-700"
-        />
-        <div className="flex items-baseline space-x-1">
-          <span className="flex space-x-1">
-            <span className="text-blue-300" title="L1 Security fees">
-              <FontAwesomeIcon icon={faEthereum} size="1x" />
-            </span>
-            <span>
-              <FormattedBalance value={l1Fees} /> {symbol}
-            </span>
-          </span>
-        </div>
+        {txData &&
+          txData.confirmedData &&
+          txData.confirmedData.l1GasUsed !== undefined && (
+            <>
+              <PercentageGauge
+                perc={l1Perc}
+                bgColor="bg-blue-100"
+                bgColorPerc="bg-blue-300"
+                textColor="text-blue-700"
+              />
+              <div className="flex items-baseline space-x-1">
+                <span className="flex space-x-1">
+                  <span className="text-blue-300" title="L1 Security fees">
+                    <FontAwesomeIcon icon={faEthereum} size="1x" />
+                  </span>
+                  <span>
+                    <FormattedBalance value={l1Fees} /> {symbol}
+                  </span>
+                </span>
+              </div>
+            </>
+          )}
       </div>
     </div>
   );
